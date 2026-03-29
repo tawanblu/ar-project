@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>AR Zone</title>
+<script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.4.0/model-viewer.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+Thai:wght@300;500;700&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #050A0F;
+  --surface: rgba(255,255,255,0.04);
+  --border: rgba(0,255,180,0.15);
+  --g: #00FFB2;
+  --g2: #00C8FF;
+  --warn: #FF4D6D;
+  --text: #E8F5EF;
+  --dim: rgba(232,245,239,0.45);
+  --mono: 'Space Mono', monospace;
+  --thai: 'Noto Sans Thai', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body {
+  width:100%; min-height:100vh; overflow-x:hidden;
+  background:var(--bg); color:var(--text);
+  font-family:var(--thai);
+}
+
+/* ── NOISE OVERLAY ── */
+body::before {
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity:0.4;
+}
+
+/* ── GRID BG ── */
+body::after {
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    linear-gradient(rgba(0,255,178,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,178,0.04) 1px, transparent 1px);
+  background-size:40px 40px;
+}
+
+/* ── GLOW ORBS ── */
+.orb {
+  position:fixed; border-radius:50%; filter:blur(80px); pointer-events:none; z-index:0;
+}
+.orb1 { width:400px; height:400px; background:rgba(0,255,178,0.06); top:-100px; right:-100px; }
+.orb2 { width:300px; height:300px; background:rgba(0,200,255,0.05); bottom:0; left:-80px; }
+
+/* ── LAYOUT ── */
+#app {
+  position:relative; z-index:1;
+  min-height:100vh;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  padding:24px 20px max(env(safe-area-inset-bottom),24px);
+}
+
+/* ── HEADER ── */
+header {
+  width:100%; max-width:420px;
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:32px;
+}
+.logo {
+  font-family:var(--mono); font-size:13px; font-weight:700;
+  color:var(--g); letter-spacing:0.2em;
+}
+.logo span { color:var(--dim); font-weight:400; }
+.live-pill {
+  display:flex; align-items:center; gap:6px;
+  font-family:var(--mono); font-size:10px; color:var(--dim);
+  background:rgba(0,255,178,0.06); border:0.5px solid var(--border);
+  border-radius:20px; padding:4px 10px;
+}
+.live-dot { width:6px; height:6px; background:var(--g); border-radius:50%; animation:blink 2s infinite; }
+@keyframes blink { 0%,100%{opacity:1;box-shadow:0 0 6px var(--g)} 50%{opacity:0.3;box-shadow:none} }
+
+/* ── CARD ── */
+.card {
+  width:100%; max-width:420px;
+  background:rgba(5,16,26,0.85);
+  border:0.5px solid var(--border);
+  border-radius:20px;
+  overflow:hidden;
+  backdrop-filter:blur(20px);
+  box-shadow:0 0 60px rgba(0,255,178,0.04), 0 20px 60px rgba(0,0,0,0.5);
+}
+
+/* ── SCAN ANIMATION AREA ── */
+.scan-zone {
+  position:relative; height:220px;
+  background:radial-gradient(ellipse at center, rgba(0,255,178,0.06) 0%, transparent 70%);
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+}
+
+/* Scan line */
+.scan-line {
+  position:absolute; left:0; right:0; height:2px;
+  background:linear-gradient(90deg, transparent, var(--g), transparent);
+  animation:scan 2.5s ease-in-out infinite;
+  filter:blur(1px);
+  opacity:0;
+}
+@keyframes scan {
+  0%   { top:10%; opacity:0; }
+  10%  { opacity:1; }
+  90%  { opacity:1; }
+  100% { top:90%; opacity:0; }
+}
+
+/* Corner brackets */
+.bracket {
+  position:absolute; width:40px; height:40px;
+  border-color:var(--g); border-style:solid; opacity:0.6;
+}
+.bracket.tl { top:20px; left:20px; border-width:2px 0 0 2px; border-radius:4px 0 0 0; }
+.bracket.tr { top:20px; right:20px; border-width:2px 2px 0 0; border-radius:0 4px 0 0; }
+.bracket.bl { bottom:20px; left:20px; border-width:0 0 2px 2px; border-radius:0 0 0 4px; }
+.bracket.br { bottom:20px; right:20px; border-width:0 2px 2px 0; border-radius:0 0 4px 0; }
+
+/* GPS pulse rings */
+.gps-rings {
+  position:relative; width:80px; height:80px;
+  display:flex; align-items:center; justify-content:center;
+}
+.ring {
+  position:absolute; border-radius:50%;
+  border:1.5px solid var(--g); opacity:0;
+  animation:ring-out 2.4s ease-out infinite;
+}
+.ring:nth-child(1) { width:80px; height:80px; animation-delay:0s; }
+.ring:nth-child(2) { width:60px; height:60px; animation-delay:0.6s; }
+.ring:nth-child(3) { width:40px; height:40px; animation-delay:1.2s; }
+@keyframes ring-out {
+  0%   { transform:scale(0.5); opacity:0.8; }
+  100% { transform:scale(1.5); opacity:0; }
+}
+.gps-icon { font-size:28px; position:relative; z-index:1; animation:bob 3s ease-in-out infinite; }
+@keyframes bob { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-4px)} }
+
+/* State-based scan zone colors */
+.scan-zone.ok   { background:radial-gradient(ellipse at center, rgba(0,255,178,0.1) 0%, transparent 70%); }
+.scan-zone.fail { background:radial-gradient(ellipse at center, rgba(255,77,109,0.1) 0%, transparent 70%); }
+.scan-zone.ok .ring  { border-color:var(--g); }
+.scan-zone.fail .ring{ border-color:var(--warn); }
+.scan-zone.ok .scan-line  { background:linear-gradient(90deg, transparent, var(--g), transparent); }
+.scan-zone.fail .scan-line{ background:linear-gradient(90deg, transparent, var(--warn), transparent); }
+.scan-zone.ok .bracket  { border-color:var(--g); }
+.scan-zone.fail .bracket{ border-color:var(--warn); }
+
+/* ── CARD BODY ── */
+.card-body { padding:20px 20px 24px; }
+
+/* Coords row */
+.coords-row {
+  display:flex; gap:8px; margin-bottom:16px;
+}
+.coord-chip {
+  flex:1; background:rgba(255,255,255,0.03);
+  border:0.5px solid rgba(255,255,255,0.08);
+  border-radius:10px; padding:8px 10px;
+}
+.coord-chip label {
+  display:block; font-family:var(--mono); font-size:9px;
+  color:var(--dim); letter-spacing:0.15em; margin-bottom:3px;
+}
+.coord-chip span {
+  font-family:var(--mono); font-size:13px; color:var(--text);
+}
+
+/* Accuracy bar */
+.acc-row {
+  display:flex; align-items:center; gap:8px; margin-bottom:16px;
+}
+.acc-label { font-family:var(--mono); font-size:10px; color:var(--dim); white-space:nowrap; }
+.acc-track {
+  flex:1; height:3px; background:rgba(255,255,255,0.06); border-radius:2px; overflow:hidden;
+}
+.acc-fill {
+  height:100%; width:0%; border-radius:2px;
+  background:linear-gradient(90deg, var(--g), var(--g2));
+  transition:width 0.6s ease;
+}
+.acc-val { font-family:var(--mono); font-size:10px; color:var(--g); min-width:36px; text-align:right; }
+
+/* Status message */
+#message {
+  font-size:14px; line-height:1.6; color:var(--text);
+  text-align:center; padding:4px 0 16px;
+  min-height:52px;
+}
+#message .sub {
+  display:block; font-size:12px; margin-top:4px;
+  font-family:var(--mono);
+}
+#message .sub.ok   { color:var(--g); }
+#message .sub.fail { color:var(--warn); }
+
+/* ── SOUND TOGGLE ── */
+.sound-row {
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  margin-bottom:16px;
+}
+.sound-toggle {
+  background:rgba(255,255,255,0.04); border:0.5px solid rgba(255,255,255,0.1);
+  border-radius:20px; padding:5px 14px;
+  font-family:var(--mono); font-size:10px; color:var(--dim);
+  cursor:pointer; transition:all 0.2s; display:flex; align-items:center; gap:6px;
+}
+.sound-toggle.on { border-color:rgba(0,255,178,0.4); color:var(--g); background:rgba(0,255,178,0.06); }
+.sound-toggle:active { opacity:0.7; }
+
+/* ── ANIM TOGGLE (for model-viewer animation) ── */
+.anim-row {
+  display:flex; gap:6px; justify-content:center; margin-bottom:16px;
+}
+.anim-chip {
+  background:rgba(255,255,255,0.04); border:0.5px solid rgba(255,255,255,0.1);
+  border-radius:16px; padding:5px 12px;
+  font-family:var(--mono); font-size:10px; color:var(--dim);
+  cursor:pointer; transition:all 0.2s;
+}
+.anim-chip.on { border-color:rgba(0,200,255,0.5); color:var(--g2); background:rgba(0,200,255,0.08); }
+
+/* ── AR BUTTON ── */
+#ar-btn {
+  display:none; width:100%;
+  padding:16px;
+  background:linear-gradient(135deg, var(--g) 0%, var(--g2) 100%);
+  border:none; border-radius:14px;
+  font-family:var(--thai); font-size:15px; font-weight:700;
+  color:#030D14; cursor:pointer;
+  position:relative; overflow:hidden;
+  transition:transform 0.15s, box-shadow 0.3s;
+  box-shadow:0 0 30px rgba(0,255,178,0.2);
+}
+#ar-btn::before {
+  content:''; position:absolute; inset:0;
+  background:linear-gradient(135deg, rgba(255,255,255,0.2) 0%, transparent 60%);
+}
+#ar-btn:active { transform:scale(0.97); }
+#ar-btn .btn-shimmer {
+  position:absolute; top:0; left:-100%; width:60%; height:100%;
+  background:linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation:shimmer 2.5s ease-in-out infinite;
+}
+@keyframes shimmer { 0%{left:-100%} 100%{left:200%} }
+
+/* model-viewer hidden trigger */
+model-viewer {
+  display:none;
+  width:1px; height:1px;
+}
+
+/* ── FOOTER NOTE ── */
+.footer-note {
+  margin-top:20px; font-size:11px; font-family:var(--mono);
+  color:var(--dim); text-align:center; letter-spacing:0.05em;
+}
+
+/* ── ANIMATIONS for card reveal ── */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(20px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+header { animation:fadeUp 0.5s ease both; }
+.card  { animation:fadeUp 0.5s 0.15s ease both; }
+.footer-note { animation:fadeUp 0.5s 0.3s ease both; }
+</style>
+</head>
+<body>
+
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+
+<div id="app">
+
+  <header>
+    <div class="logo">AR<span>/</span>ZONE</div>
+    <div class="live-pill">
+      <div class="live-dot"></div>
+      TRACKING
+    </div>
+  </header>
+
+  <div class="card">
+
+    <!-- scan zone -->
+    <div class="scan-zone" id="scan-zone">
+      <div class="bracket tl"></div>
+      <div class="bracket tr"></div>
+      <div class="bracket bl"></div>
+      <div class="bracket br"></div>
+      <div class="scan-line"></div>
+      <div class="gps-rings">
+        <div class="ring"></div>
+        <div class="ring"></div>
+        <div class="ring"></div>
+        <div class="gps-icon" id="gps-icon">📡</div>
+      </div>
+    </div>
+
+    <div class="card-body">
+
+      <!-- coordinates -->
+      <div class="coords-row">
+        <div class="coord-chip">
+          <label>LATITUDE</label>
+          <span id="lat-val">---.----</span>
+        </div>
+        <div class="coord-chip">
+          <label>LONGITUDE</label>
+          <span id="lng-val">---.----</span>
+        </div>
+      </div>
+
+      <!-- accuracy bar -->
+      <div class="acc-row">
+        <span class="acc-label">ACCURACY</span>
+        <div class="acc-track"><div class="acc-fill" id="acc-fill"></div></div>
+        <span class="acc-val" id="acc-val">--m</span>
+      </div>
+
+      <!-- status -->
+      <div id="message">
+        กำลังค้นหาตำแหน่ง GPS…
+        <span class="sub" id="sub-msg"></span>
+      </div>
+
+      <!-- sound toggle -->
+      <div class="sound-row">
+        <button class="sound-toggle on" id="sound-toggle" onclick="toggleSound()">
+          🔊 <span id="sound-label">เสียงเปิด</span>
+        </button>
+      </div>
+
+      <!-- animation clip chooser (shown after AR ready) -->
+      <div class="anim-row" id="anim-row" style="display:none">
+        <div class="anim-chip on" onclick="setClip(this,'')">▶ Default</div>
+        <div class="anim-chip" onclick="setClip(this,'Idle')">💤 Idle</div>
+        <div class="anim-chip" onclick="setClip(this,'Walk')">🚶 Walk</div>
+        <div class="anim-chip" onclick="setClip(this,'Run')">🏃 Run</div>
+      </div>
+
+      <!-- AR button -->
+      <button id="ar-btn" onclick="openAR()">
+        <div class="btn-shimmer"></div>
+        🚀 เปิด AR — วางโมเดล 3D
+      </button>
+
+    </div>
+  </div>
+
+  <div class="footer-note">HTTPS required · WebXR / QuickLook / Scene Viewer</div>
+</div>
+
+<!-- model-viewer: ใช้เป็น AR launcher เท่านั้น -->
+<model-viewer
+  id="my-model"
+  src="https://modelviewer.dev/shared-assets/models/Astronaut.glb"
+  ios-src="https://modelviewer.dev/shared-assets/models/Astronaut.usdz"
+  ar
+  ar-modes="webxr scene-viewer quick-look"
+  ar-scale="fixed"
+  camera-controls
+  auto-rotate
+  animation-name=""
+  autoplay
+></model-viewer>
+
+<script>
+// ============================================================
+//  STATE
+// ============================================================
+let soundOn=true;
+let audioCtx=null;
+let currentClip='';
+
+// ============================================================
+//  SOUND ENGINE (Web Audio API — ไม่ต้องไฟล์ภายนอก)
+// ============================================================
+function getAudioCtx() {
+  if (!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function playTone(freq,type,duration,vol=0.3,delay=0) {
+  if (!soundOn) return;
+  try {
+    const ctx=getAudioCtx();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type=type; osc.frequency.value=freq;
+    const t=ctx.currentTime+delay;
+    gain.gain.setValueAtTime(0,t);
+    gain.gain.linearRampToValueAtTime(vol,t+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001,t+duration);
+    osc.start(t); osc.stop(t+duration);
+  } catch(e){}
+}
+
+function playSuccess() {
+  playTone(523,'sine',0.15,0.25,0);
+  playTone(659,'sine',0.15,0.25,0.12);
+  playTone(784,'sine',0.25,0.3,0.24);
+}
+
+function playFail() {
+  playTone(300,'sawtooth',0.2,0.2,0);
+  playTone(200,'sawtooth',0.3,0.2,0.15);
+}
+
+function playScan() {
+  // subtle beep loop
+  playTone(880,'sine',0.05,0.08,0);
+}
+
+function playAROpen() {
+  [0,0.08,0.16,0.28].forEach((d,i)=>{
+    playTone([440,554,659,880][i],'sine',0.18,0.25,d);
+  });
+}
+
+function toggleSound() {
+  soundOn=!soundOn;
+  const btn=document.getElementById('sound-toggle');
+  const lbl=document.getElementById('sound-label');
+  btn.classList.toggle('on',soundOn);
+  lbl.textContent=soundOn?'เสียงเปิด':'เสียงปิด';
+  btn.querySelector('span').previousSibling.textContent=soundOn?'🔊 ':'🔇 ';
+  // fix textContent hack
+  btn.innerHTML=`${soundOn?'🔊':'🔇'} <span id="sound-label">${soundOn?'เสียงเปิด':'เสียงปิด'}</span>`;
+  btn.onclick=toggleSound;
+}
+
+// Scanning beep interval
+let scanInterval=setInterval(playScan,2500);
+
+// ============================================================
+//  GEOLOCATION
+// ============================================================
+function isInThailand(lat,lng) {
+  return lat>=5.5&&lat<=20.5&&lng>=97.0&&lng<=105.5;
+}
+
+function setAccBar(meters) {
+  // 100m → 0%, 5m → 100%
+  const pct=Math.max(0,Math.min(100,100-(meters-5)/0.95));
+  document.getElementById('acc-fill').style.width=pct+'%';
+  document.getElementById('acc-val').textContent=Math.round(meters)+'m';
+}
+
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      clearInterval(scanInterval);
+      const lat=pos.coords.latitude;
+      const lng=pos.coords.longitude;
+      const acc=pos.coords.accuracy;
+
+      document.getElementById('lat-val').textContent=lat.toFixed(5);
+      document.getElementById('lng-val').textContent=lng.toFixed(5);
+      setAccBar(acc);
+
+      if (isInThailand(lat,lng)) {
+        // ✅ SUCCESS
+        playSuccess();
+        document.getElementById('scan-zone').classList.add('ok');
+        document.getElementById('gps-icon').textContent='✅';
+        document.getElementById('message').innerHTML=
+          'ตรวจสอบพิกัดสำเร็จ<span class="sub ok">คุณอยู่ในพื้นที่ที่กำหนด</span>';
+        document.getElementById('ar-btn').style.display='block';
+        document.getElementById('anim-row').style.display='flex';
+      } else {
+        // ❌ FAIL
+        playFail();
+        document.getElementById('scan-zone').classList.add('fail');
+        document.getElementById('gps-icon').textContent='❌';
+        document.getElementById('message').innerHTML=
+          'ไม่อยู่ในพื้นที่ที่กำหนด<span class="sub fail">ระบบนี้ใช้ได้เฉพาะในประเทศไทย</span>';
+      }
+    },
+    err => {
+      clearInterval(scanInterval);
+      playFail();
+      document.getElementById('scan-zone').classList.add('fail');
+      document.getElementById('gps-icon').textContent='⚠️';
+      document.getElementById('message').innerHTML=
+        'ไม่สามารถรับ GPS ได้<span class="sub fail">โปรดเปิด GPS และอนุญาตสิทธิ์</span>';
+    },
+    { enableHighAccuracy:true, timeout:12000, maximumAge:0 }
+  );
+} else {
+  document.getElementById('message').innerHTML=
+    'ไม่รองรับ GPS<span class="sub fail">อัปเดตเบราว์เซอร์</span>';
+}
+
+// ============================================================
+//  ANIMATION CLIP
+// ============================================================
+function setClip(el,clip) {
+  document.querySelectorAll('.anim-chip').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on');
+  currentClip=clip;
+  const mv=document.getElementById('my-model');
+  mv.setAttribute('animation-name',clip);
+}
+
+// ============================================================
+//  OPEN AR
+// ============================================================
+function openAR() {
+  // Resume audio context on user gesture
+  if (audioCtx&&audioCtx.state==='suspended') audioCtx.resume();
+  playAROpen();
+
+  const mv=document.getElementById('my-model');
+  // Apply current animation
+  mv.setAttribute('animation-name',currentClip);
+
+  if (mv.canActivateAR) {
+    mv.activateAR();
+  } else {
+    // Fallback: open model-viewer in fullscreen for devices without AR
+    mv.style.cssText='display:block;position:fixed;inset:0;width:100%;height:100%;z-index:9999;background:#000;';
+    mv.setAttribute('camera-controls','');
+    mv.setAttribute('auto-rotate','');
+    const closeBtn=document.createElement('button');
+    closeBtn.textContent='✕ ปิด';
+    closeBtn.style.cssText='position:fixed;top:max(env(safe-area-inset-top),16px);right:16px;z-index:10000;background:rgba(0,0,0,0.7);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:20px;padding:8px 16px;font-size:14px;cursor:pointer;';
+    closeBtn.onclick=()=>{ mv.style.cssText='display:none;width:1px;height:1px;'; closeBtn.remove(); };
+    document.body.appendChild(closeBtn);
+  }
+}
+</script>
+</body>
+</html>
